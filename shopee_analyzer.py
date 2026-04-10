@@ -34,6 +34,11 @@ try:
 except ImportError:
     msoffcrypto = None
 
+try:
+    import xlsxwriter
+except ImportError:
+    xlsxwriter = None
+
 
 # ── 核心分析邏輯 ──────────────────────────────────────────
 
@@ -364,6 +369,250 @@ def generate_report(order_results, ad_results):
     return "\n".join(lines)
 
 
+def export_comparison_excel(order_results, ad_results, output_path):
+    """產出 Excel 比較表：優惠券 vs 廣告費溢價分析"""
+    if xlsxwriter is None:
+        return "缺少 xlsxwriter 套件，無法產出 Excel。請執行 pip install xlsxwriter"
+
+    months_with_both = [m for m in order_results if m in ad_results]
+    if len(months_with_both) < 2:
+        return "需要至少兩個月份的訂單+廣告資料才能產出比較表"
+
+    base = months_with_both[0]
+    bo = order_results[base]
+    ba = ad_results[base]
+
+    wb = xlsxwriter.Workbook(output_path)
+
+    # ── 格式 ──
+    fmt_title = wb.add_format({'bold': True, 'font_size': 14, 'font_name': 'Microsoft JhengHei',
+                                'bg_color': '#EE4D2D', 'font_color': 'white', 'align': 'center',
+                                'valign': 'vcenter', 'border': 1})
+    fmt_header = wb.add_format({'bold': True, 'font_size': 11, 'font_name': 'Microsoft JhengHei',
+                                 'bg_color': '#FFF0ED', 'border': 1, 'align': 'center',
+                                 'valign': 'vcenter', 'text_wrap': True})
+    fmt_label = wb.add_format({'bold': True, 'font_size': 10, 'font_name': 'Microsoft JhengHei',
+                                'border': 1, 'valign': 'vcenter'})
+    fmt_money = wb.add_format({'num_format': '$#,##0', 'font_size': 10, 'font_name': 'Microsoft JhengHei',
+                                'border': 1, 'align': 'right'})
+    fmt_pct = wb.add_format({'num_format': '0.0%', 'font_size': 10, 'font_name': 'Microsoft JhengHei',
+                              'border': 1, 'align': 'right'})
+    fmt_pct_change = wb.add_format({'num_format': '+0.0%;-0.0%', 'font_size': 10,
+                                     'font_name': 'Microsoft JhengHei', 'border': 1, 'align': 'right'})
+    fmt_number = wb.add_format({'num_format': '#,##0', 'font_size': 10, 'font_name': 'Microsoft JhengHei',
+                                 'border': 1, 'align': 'right'})
+    fmt_decimal = wb.add_format({'num_format': '0.0', 'font_size': 10, 'font_name': 'Microsoft JhengHei',
+                                  'border': 1, 'align': 'right'})
+    fmt_money_red = wb.add_format({'num_format': '$#,##0', 'font_size': 10, 'font_name': 'Microsoft JhengHei',
+                                    'border': 1, 'align': 'right', 'bg_color': '#FFE0E0', 'bold': True})
+    fmt_money_green = wb.add_format({'num_format': '$#,##0', 'font_size': 10, 'font_name': 'Microsoft JhengHei',
+                                      'border': 1, 'align': 'right', 'bg_color': '#E0FFE0'})
+    fmt_pct_red = wb.add_format({'num_format': '+0.0%;-0.0%', 'font_size': 10,
+                                  'font_name': 'Microsoft JhengHei', 'border': 1, 'align': 'right',
+                                  'bg_color': '#FFE0E0', 'bold': True})
+    fmt_base = wb.add_format({'font_size': 10, 'font_name': 'Microsoft JhengHei',
+                               'border': 1, 'align': 'center', 'bg_color': '#F0F0F0', 'italic': True})
+    fmt_note = wb.add_format({'font_size': 9, 'font_name': 'Microsoft JhengHei',
+                               'italic': True, 'text_wrap': True, 'valign': 'top'})
+    fmt_section = wb.add_format({'bold': True, 'font_size': 10, 'font_name': 'Microsoft JhengHei',
+                                  'bg_color': '#FFF8F0', 'border': 1, 'valign': 'vcenter'})
+
+    n_months = len(months_with_both)
+
+    # ═══════════════════════════════════════════════════════
+    # Sheet 1: 核心比較表 — 優惠券 vs 廣告費溢價
+    # ═══════════════════════════════════════════════════════
+    ws1 = wb.add_worksheet("優惠券vs廣告費溢價")
+    ws1.set_column(0, 0, 30)
+    for i in range(n_months):
+        ws1.set_column(i + 1, i + 1, 16)
+
+    r = 0
+    ws1.merge_range(r, 0, r, n_months, "蝦皮優惠券 vs 廣告費溢價分析", fmt_title)
+    r += 1
+    ws1.merge_range(r, 0, r, n_months,
+                    f"基準月份：{base}　｜　分析工具：github.com/zengkao/shopee-analyzer",
+                    wb.add_format({'font_size': 9, 'font_name': 'Microsoft JhengHei',
+                                   'align': 'center', 'italic': True}))
+    r += 2
+
+    # 表頭
+    ws1.write(r, 0, "項目", fmt_header)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, m, fmt_header)
+    r += 1
+
+    # ── A. 蝦皮發了多少優惠券 ──
+    ws1.write(r, 0, "【A. 蝦皮發出的優惠券】", fmt_section)
+    for i in range(n_months):
+        ws1.write(r, i + 1, "", fmt_section)
+    r += 1
+
+    ws1.write(r, 0, "蝦皮負擔優惠券金額", fmt_label)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, order_results[m]['shopee_coupon'], fmt_money_green)
+    r += 1
+
+    ws1.write(r, 0, "所有折扣合計（含蝦幣）", fmt_label)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, order_results[m]['total_discount'], fmt_money)
+    r += 1
+
+    ws1.write(r, 0, "優惠券使用率", fmt_label)
+    for i, m in enumerate(months_with_both):
+        o = order_results[m]
+        ws1.write(r, i + 1, o['coupon_orders'] / o['orders'] if o['orders'] > 0 else 0, fmt_pct)
+    r += 1
+
+    # ── B. 賣家被多收的廣告費 ──
+    ws1.write(r, 0, "【B. 賣家的廣告費】", fmt_section)
+    for i in range(n_months):
+        ws1.write(r, i + 1, "", fmt_section)
+    r += 1
+
+    ws1.write(r, 0, "廣告費", fmt_label)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, ad_results[m]['ad_spend'], fmt_money_red)
+    r += 1
+
+    ws1.write(r, 0, f"廣告費增減（vs {base}）", fmt_label)
+    for i, m in enumerate(months_with_both):
+        if m == base:
+            ws1.write(r, i + 1, "基準", fmt_base)
+        else:
+            ws1.write(r, i + 1, ad_results[m]['ad_spend'] - ba['ad_spend'], fmt_money_red)
+    r += 1
+
+    ws1.write(r, 0, f"廣告費變化幅度", fmt_label)
+    for i, m in enumerate(months_with_both):
+        if m == base:
+            ws1.write(r, i + 1, "基準", fmt_base)
+        else:
+            ws1.write(r, i + 1, ad_results[m]['ad_spend'] / ba['ad_spend'] - 1, fmt_pct_red)
+    r += 1
+
+    # ── C. 關鍵比較 ──
+    ws1.write(r, 0, "【C. 關鍵比較：誰賺了？】", fmt_section)
+    for i in range(n_months):
+        ws1.write(r, i + 1, "", fmt_section)
+    r += 1
+
+    ws1.write(r, 0, "蝦皮發券金額 (A)", fmt_label)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, order_results[m]['shopee_coupon'], fmt_money_green)
+    r += 1
+
+    ws1.write(r, 0, f"賣家多付廣告費 (B, vs {base})", fmt_label)
+    for i, m in enumerate(months_with_both):
+        if m == base:
+            ws1.write(r, i + 1, "基準", fmt_base)
+        else:
+            ws1.write(r, i + 1, ad_results[m]['ad_spend'] - ba['ad_spend'], fmt_money_red)
+    r += 1
+
+    ws1.write(r, 0, "差額（多付廣告費 - 發券金額）", fmt_label)
+    for i, m in enumerate(months_with_both):
+        if m == base:
+            ws1.write(r, i + 1, "基準", fmt_base)
+        else:
+            diff = (ad_results[m]['ad_spend'] - ba['ad_spend']) - order_results[m]['shopee_coupon']
+            ws1.write(r, i + 1, diff, fmt_money_red if diff > 0 else fmt_money_green)
+    r += 1
+
+    ws1.write(r, 0, "溢價倍數（多付廣告費 / 發券金額）", fmt_label)
+    for i, m in enumerate(months_with_both):
+        if m == base:
+            ws1.write(r, i + 1, "基準", fmt_base)
+        else:
+            extra_ad = ad_results[m]['ad_spend'] - ba['ad_spend']
+            coupon = order_results[m]['shopee_coupon']
+            if coupon > 0 and extra_ad > 0:
+                ws1.write(r, i + 1, extra_ad / coupon,
+                          wb.add_format({'num_format': '0.0"倍"', 'font_size': 10,
+                                         'font_name': 'Microsoft JhengHei', 'border': 1,
+                                         'align': 'right', 'bg_color': '#FFE0E0', 'bold': True}))
+            else:
+                ws1.write(r, i + 1, "N/A", fmt_base)
+    r += 2
+
+    # ── D. 廣告效率對照 ──
+    ws1.write(r, 0, "【D. 廣告效率變化】", fmt_section)
+    for i in range(n_months):
+        ws1.write(r, i + 1, "", fmt_section)
+    r += 1
+
+    ws1.write(r, 0, "ROAS", fmt_label)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, ad_results[m]['roas'], fmt_decimal)
+    r += 1
+
+    ws1.write(r, 0, "CPC（每次點擊成本）", fmt_label)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, ad_results[m]['cpc'], fmt_money)
+    r += 1
+
+    ws1.write(r, 0, "廣告轉換率", fmt_label)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, ad_results[m]['conv_rate'] / 100, fmt_pct)
+    r += 1
+
+    ws1.write(r, 0, "廣告費占營收比", fmt_label)
+    for i, m in enumerate(months_with_both):
+        o = order_results[m]
+        ws1.write(r, i + 1, ad_results[m]['ad_spend'] / o['revenue'] if o['revenue'] > 0 else 0, fmt_pct)
+    r += 2
+
+    # ── E. 賣家實際損益 ──
+    ws1.write(r, 0, "【E. 賣家實際損益】", fmt_section)
+    for i in range(n_months):
+        ws1.write(r, i + 1, "", fmt_section)
+    r += 1
+
+    ws1.write(r, 0, "營業額", fmt_label)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, order_results[m]['revenue'], fmt_money)
+    r += 1
+
+    ws1.write(r, 0, "平台費用", fmt_label)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, order_results[m]['platform_total'], fmt_money)
+    r += 1
+
+    ws1.write(r, 0, "廣告費", fmt_label)
+    for i, m in enumerate(months_with_both):
+        ws1.write(r, i + 1, ad_results[m]['ad_spend'], fmt_money)
+    r += 1
+
+    ws1.write(r, 0, "實際到手", fmt_label)
+    for i, m in enumerate(months_with_both):
+        o = order_results[m]
+        net = o['buyer_paid'] - o['platform_total'] - ad_results[m]['ad_spend']
+        ws1.write(r, i + 1, net, fmt_money)
+    r += 1
+
+    ws1.write(r, 0, f"到手變化（vs {base}）", fmt_label)
+    base_net = bo['buyer_paid'] - bo['platform_total'] - ba['ad_spend']
+    for i, m in enumerate(months_with_both):
+        if m == base:
+            ws1.write(r, i + 1, "基準", fmt_base)
+        else:
+            o = order_results[m]
+            cur_net = o['buyer_paid'] - o['platform_total'] - ad_results[m]['ad_spend']
+            ws1.write(r, i + 1, cur_net / base_net - 1, fmt_pct_red)
+    r += 2
+
+    # 附註
+    ws1.merge_range(r, 0, r + 2, n_months,
+                    "附註：\n"
+                    "• 「溢價倍數」= 賣家多付的廣告費 / 蝦皮發出的優惠券金額。倍數越高代表蝦皮用越小的券換取賣家越多的廣告費。\n"
+                    "• 蝦皮官方聲稱「花費不會有任何變動」（ads.shopee.tw/learn/faq/467/1975），但數據顯示廣告費大幅增加。\n"
+                    "• 本表由開源工具自動產生：github.com/zengkao/shopee-analyzer",
+                    fmt_note)
+
+    wb.close()
+    return None
+
+
 # ── GUI ──────────────────────────────────────────────────
 
 class ShopeeAnalyzerApp:
@@ -571,19 +820,31 @@ class ShopeeAnalyzerApp:
             report = generate_report(order_results, ad_results)
             self._log(report)
 
-            # 儲存
+            # 儲存 txt
             output_path = self.output_var.get().strip()
+            base_dir = os.path.dirname(self.order_files[0] if self.order_files else self.ad_files[0])
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+
             if output_path:
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(report)
                 self._log(f"\n報告已儲存至：{output_path}")
+                txt_dir = os.path.dirname(output_path)
             else:
-                # 自動存到第一個檔案的同目錄
-                base_dir = os.path.dirname(self.order_files[0] if self.order_files else self.ad_files[0])
-                auto_path = os.path.join(base_dir, f"分析報告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+                auto_path = os.path.join(base_dir, f"分析報告_{ts}.txt")
                 with open(auto_path, 'w', encoding='utf-8') as f:
                     f.write(report)
                 self._log(f"\n報告已自動儲存至：{auto_path}")
+                txt_dir = base_dir
+
+            # 儲存 Excel 比較表
+            if order_results and ad_results:
+                excel_path = os.path.join(txt_dir, f"優惠券vs廣告費_比較表_{ts}.xlsx")
+                err = export_comparison_excel(order_results, ad_results, excel_path)
+                if err:
+                    self._log(f"\n⚠ Excel 比較表：{err}")
+                else:
+                    self._log(f"Excel 比較表已儲存至：{excel_path}")
 
         except Exception as e:
             self._log(f"\n錯誤：{e}")
