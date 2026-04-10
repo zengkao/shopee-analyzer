@@ -348,7 +348,7 @@ def generate_report(order_results, ad_results):
                 if m == base:
                     vals.append(f"{'基準':>{W}s}")
                 else:
-                    vals.append(f"{get_val(m):>{W-1}+.1f}%")
+                    vals.append(f"{get_val(m):>+{W-1}.1f}%")
             fmtrow(label, vals)
 
         vals = []
@@ -359,7 +359,7 @@ def generate_report(order_results, ad_results):
             else:
                 cur_o = order_results[m]
                 cur_net = cur_o['buyer_paid'] - cur_o['platform_total'] - ad_results[m]['ad_spend']
-                vals.append(f"{(cur_net / base_net * 100 - 100):>{W-1}+.1f}%")
+                vals.append(f"{(cur_net / base_net * 100 - 100):>+{W-1}.1f}%")
         fmtrow('實際到手變化', vals)
 
     lines.append("\n" + "=" * len(sep))
