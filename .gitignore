@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+*.xlsx
+*.csv
+分析報告_*.txt
